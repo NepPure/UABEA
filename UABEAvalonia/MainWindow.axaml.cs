@@ -39,6 +39,7 @@ namespace UABEAvalonia
         private Button btnInfo;
         private Button btnExportAll;
         private Button btnImportAll;
+        private Button btnBatchFgo;
 
         private AssetsManager am;
         private BundleFileInstance bundleInst;
@@ -49,6 +50,8 @@ namespace UABEAvalonia
         private bool ignoreCloseEvent;
 
         public ObservableCollection<ComboBoxItem> comboItems;
+
+        private string latestFile;
 
         public MainWindow()
         {
@@ -81,6 +84,7 @@ namespace UABEAvalonia
             btnInfo = this.FindControl<Button>("btnInfo");
             btnExportAll = this.FindControl<Button>("btnExportAll");
             btnImportAll = this.FindControl<Button>("btnImportAll");
+            btnBatchFgo = this.FindControl<Button>("btnBatchFgo");
             //generated events
             menuOpen.Click += MenuOpen_Click;
             menuLoadPackageFile.Click += MenuLoadPackageFile_Click;
@@ -96,6 +100,7 @@ namespace UABEAvalonia
             btnRemove.Click += BtnRemove_Click;
             btnInfo.Click += BtnInfo_Click;
             btnExportAll.Click += BtnExportAll_Click;
+            btnBatchFgo.Click += BtnBatchFgo_Click;
             Closing += MainWindow_Closing;
 
             newFiles = new Dictionary<string, BundleReplacer>();
@@ -106,6 +111,11 @@ namespace UABEAvalonia
             AddHandler(DragDrop.DropEvent, Drop);
 
             ThemeHandler.UseDarkTheme = ConfigurationManager.Settings.UseDarkTheme;
+        }
+
+        private async void BtnBatchFgo_Click(object? sender, RoutedEventArgs e)
+        {
+            await MessageBoxUtil.ShowDialog(this, "开摆", "太麻烦了");
         }
 
         private async void MainWindow_Initialized(object? sender, EventArgs e)
@@ -124,13 +134,15 @@ namespace UABEAvalonia
             }
         }
 
-        async void OpenFiles(string[] files)
+        async Task OpenFiles(string[] files)
         {
             string selectedFile = files[0];
 
+            latestFile = selectedFile;
+
             DetectedFileType fileType = AssetBundleDetector.DetectFileType(selectedFile);
 
-            CloseAllFiles();
+            await CloseAllFiles();
 
             //can you even have split bundles?
             if (fileType != DetectedFileType.Unknown)
@@ -196,14 +208,14 @@ namespace UABEAvalonia
             }
         }
 
-        void Drop(object sender, DragEventArgs e)
+        async void Drop(object sender, DragEventArgs e)
         {
             string[] files = e.Data.GetFileNames().ToArray();
 
             if (files == null || files.Length == 0)
                 return;
 
-            OpenFiles(files);
+            await OpenFiles(files);
         }
 
         private async void MenuOpen_Click(object? sender, RoutedEventArgs e)
@@ -217,7 +229,7 @@ namespace UABEAvalonia
             if (files == null || files.Length == 0)
                 return;
 
-            OpenFiles(files);
+            await OpenFiles(files);
         }
 
         private async void MenuLoadPackageFile_Click(object? sender, RoutedEventArgs e)
@@ -264,7 +276,7 @@ namespace UABEAvalonia
         private async void MenuClose_Click(object? sender, RoutedEventArgs e)
         {
             await AskForSave();
-            CloseAllFiles();
+            await CloseAllFiles();
         }
 
         private async void BtnExport_Click(object? sender, RoutedEventArgs e)
@@ -465,7 +477,7 @@ namespace UABEAvalonia
                     if (!Directory.Exists(bunAssetDir))
                     {
                         Directory.CreateDirectory(bunAssetDir);
-                    }    
+                    }
                 }
 
                 using FileStream fileStream = File.OpenWrite(bunAssetPath);
@@ -628,49 +640,24 @@ namespace UABEAvalonia
         {
             if (bundleInst != null)
             {
-                //temporary, maybe I should just write to a memory stream or smth
-                //edit: looks like uabe just asks you to open a file instead of
-                //using your currently opened one, so that may be the workaround
-                if (changesMade)
-                {
-                    string messageBoxTest;
-                    if (changesUnsaved)
-                    {
-                        messageBoxTest =
-                            "You've modified this file, but you still haven't saved this bundle file to disk yet. If you want \n" +
-                            "to compress the file with changes, please save this bundle now and open that file instead. \n" +
-                            "Click Ok to compress the file without changes.";
-                    }
-                    else
-                    {
-                        messageBoxTest =
-                            "You've modified this file, but only the old file before you made changes is open. If you want to compress the file with \n" +
-                            "changes, please close this bundle and open the file you saved. Click Ok to compress the file without changes.";
-                    }
-
-                    ButtonResult continueWithChanges = await MessageBoxUtil.ShowDialog(
-                        this, "Note", messageBoxTest,
-                        ButtonEnum.OkCancel);
-
-                    if (continueWithChanges == ButtonResult.Cancel)
-                    {
-                        return;
-                    }
-                }
-
                 SaveFileDialog sfd = new SaveFileDialog();
                 sfd.Title = "Save as...";
 
-                string? file = await sfd.ShowAsync(this);
+                var file = await sfd.ShowAsync(this);
 
                 if (file == null)
                     return;
 
+                string tmpFile = null;
+
+
                 const string lz4Option = "LZ4";
                 const string lzmaOption = "LZMA";
                 const string cancelOption = "Cancel";
+
+
                 string result = await MessageBoxUtil.ShowDialogCustom(
-                    this, "Note", "What compression method do you want to use?\nLZ4: Faster but larger size\nLZMA: Slower but smaller size",
+                    this, "请选择压缩格式", "LZ4: 速度快，文件大\nLZMA: 速度慢，文件小（FGO选择这个）",
                     lz4Option, lzmaOption, cancelOption);
 
                 AssetBundleCompressionType compType = result switch
@@ -682,7 +669,28 @@ namespace UABEAvalonia
 
                 if (compType != AssetBundleCompressionType.NONE)
                 {
-                    CompressBundle(bundleInst, file, compType);
+                    if (changesMade)
+                    {
+                        tmpFile = $"tmp_{DateTimeOffset.Now.ToUnixTimeMilliseconds()}";
+                        SaveBundle(bundleInst, tmpFile);
+                        await OpenFiles(new string[] { tmpFile });
+                    }
+                    lblFileName.Text = "压缩中，请勿关闭窗口和加载新文件...";
+                    await CompressBundle(bundleInst, file, compType);
+                }
+                else
+                {
+                    lblFileName.Text = "已取消压缩保存";
+                    return;
+                }
+
+                await CloseAllFiles();
+                lblFileName.Text = "压缩保存成功";
+
+                if (tmpFile != null)
+                {
+                    if (File.Exists(tmpFile))
+                        File.Delete(tmpFile);
                 }
             }
             else
@@ -851,16 +859,17 @@ namespace UABEAvalonia
             changesUnsaved = false;
         }
 
-        private void CompressBundle(BundleFileInstance bundleInst, string path, AssetBundleCompressionType compType)
+        private static Task CompressBundle(BundleFileInstance bundleInst, string path, AssetBundleCompressionType compType)
         {
-            using (FileStream fs = File.OpenWrite(path))
-            using (AssetsFileWriter w = new AssetsFileWriter(fs))
-            {
-                bundleInst.file.Pack(bundleInst.file.reader, w, compType);
-            }
+            return Task.Run(() =>
+             {
+                 using FileStream fs = File.OpenWrite(path);
+                 using AssetsFileWriter w = new AssetsFileWriter(fs);
+                 bundleInst.file.Pack(bundleInst.file.reader, w, compType);
+             });
         }
 
-        private void CloseAllFiles()
+        private Task CloseAllFiles()
         {
             newFiles.Clear();
             changesUnsaved = false;
@@ -877,6 +886,8 @@ namespace UABEAvalonia
             bundleInst = null;
 
             lblFileName.Text = "No file opened.";
+
+            return Task.CompletedTask;
         }
 
         private void SetBundleControlsEnabled(bool enabled, bool hasAssets = false)
@@ -886,6 +897,7 @@ namespace UABEAvalonia
             btnRemove.IsEnabled = (enabled ? hasAssets : false);
             btnInfo.IsEnabled = (enabled ? hasAssets : false);
             btnExportAll.IsEnabled = (enabled ? hasAssets : false);
+            btnBatchFgo.IsEnabled = (enabled ? hasAssets : false);
 
             // always enable / disable no matter if there's assets or not
             comboBox.IsEnabled = enabled;

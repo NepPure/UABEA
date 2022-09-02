@@ -13,6 +13,8 @@ namespace UABEAvalonia
 {
     public static class MessageBoxUtil
     {
+        public const string FontFamily = "Microsoft YaHei,Simsun,苹方-简,宋体-简";  // 使用英文逗号分隔
+
         public static async Task<ButtonResult> ShowDialog(Window window, string header, string message)
         {
             return await ShowDialog(window, header, message, ButtonEnum.Ok);
@@ -24,6 +26,7 @@ namespace UABEAvalonia
             {
                 ButtonDefinitions = buttons,
                 ContentHeader = header,
+                FontFamily = FontFamily,
                 ContentMessage = message
             }).ShowDialog(window);
         }
@@ -40,6 +43,7 @@ namespace UABEAvalonia
             {
                 ContentHeader = header,
                 ContentMessage = message,
+                FontFamily = FontFamily,
                 ButtonDefinitions = definitions
             }).ShowDialog(window);
         }

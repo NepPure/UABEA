@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Text;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -19,6 +20,8 @@ namespace UABEAvalonia
         [STAThread]
         public static void Main(string[] args)
         {
+            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);    
+
             bool usesConsole = false;
             if (Environment.OSVersion.Platform == PlatformID.Win32NT)
             {
@@ -64,7 +67,7 @@ namespace UABEAvalonia
         // Avalonia configuration, don't remove; also used by visual designer.
         public static AppBuilder BuildAvaloniaApp()
             => AppBuilder.Configure<App>()
-                .UsePlatformDetect()
-                .LogToTrace();
+            .UsePlatformDetect()
+            .LogToTrace();
     }
 }
